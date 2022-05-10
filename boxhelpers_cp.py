@@ -7,7 +7,6 @@ def coord_to_box(image, coords):
     box[coords[1]:coords[4],coords[2]:coords[5],coords[3]:coords[6]] = True
     return cp.array(box).astype(bool)
 
-# span a box of certain dimenstions around a pixel coord
 def coord_to_box_expand(image, coords, npixels):
     # subset the box and set pixels to ones
  
