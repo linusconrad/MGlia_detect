@@ -54,7 +54,7 @@ def get_seeds(image, xystep, zstep, sigma=5, x=30):
     
     # preserve memory
     del localhigh 
-    dellocalhigh_img 
+    del localhigh_img 
     
     # loop through he object and get the seeds into an array
     seedlist = []
@@ -229,3 +229,5 @@ def detect_cell_iter(image, seedcoord, expandpix, vlow, vhigh):
         if (n_tries > 6):
             #print("...Bad seed: Cant find a solution")
             return void_mask.get()      
+
+        return np.array(cellimg).astype(bool)
