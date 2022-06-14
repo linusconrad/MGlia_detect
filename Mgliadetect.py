@@ -41,16 +41,16 @@ def get_seeds(image, xystep, zstep, sigma=5, x=30):
     del filtered
 
     #create an empty boolean array of the dimensions of the source img
-    localhigh = cp.zeros_like(filtered, dtype=bool)
+    localhigh = cp.zeros_like(image, dtype=bool)
 
     # this will feed the coord to the empty mask
     localhigh[tuple(locmax.T)] = True
     
     # label the local highs 
     localhigh_img = ndi.label(localhigh)[0]
-    print("found", np.unique(localhigh_img).shape[0], "seeds and", locmax.shape[0], " pixels")
+    print("Found", np.unique(localhigh_img).shape[0], "seeds and", locmax.shape[0], " pixels")
     
-    seedprops = skimage.measure.regionprops(localhigh_img, img)
+    seedprops = skimage.measure.regionprops(localhigh_img, image)
     
     # preserve memory
     del localhigh 
@@ -154,6 +154,7 @@ def find_cell_thresh(image, seed, expandpix):
     # subset the ROI and calulate thresh based on ROI
     ROI = seed_to_subset(image, seed, expandpix)
     Thresh = skimagecpu.filters.threshold_otsu(ROI) 
+    del ROI
     return Thresh
 
 # define a function that makes a cell from threshold
@@ -167,34 +168,37 @@ def detect_cell_thresh(image, seedcoord, thresh):
     bin_img_cpu = bin_img.get()
     
     cellimg = skimagecpu.segmentation.flood(bin_img_cpu,floodseed)
+    del image
+    del bin_img
     
     return np.array(cellimg).astype(bool)
 
 
 # iterative cell detection
-def detect_cell_iter(image, seedcoord, expandpix, vlow, vhigh):
+def detect_cell_iter(image, seedcoord, expandpix, vlow, vhigh, debug = False):
     
     # setup a threshold for the iterating, start with a little less than Otsu
     # this way it reduces the volume from a too large fit
     thresh_iter = find_cell_thresh(image, seedcoord, expandpix)*0.6
-    void_mask = cp.zeros_like(image)
     
     # get the candidate cell mask
+    if debug: print("Starting with a new candidate cell.")
     CCM = detect_cell_thresh(image, seedcoord, thresh_iter)
+    
     # count the number of pixels in the mask (volume)
     vol = cp.count_nonzero(cp.asarray(CCM))
     
     n_tries = 1
     # if the volume is within the tolerance, return the mask
     if (vol < vhigh and vol >vlow):
-        #print("...done in one go")
+        if debug: print("...done in one go")
         return CCM
     
     # while the number of pixels is outside the tolerance
     while not(vol < vhigh and vol >vlow):
         # if the volume is larger than target interval set threshold to previous*1.x
         if vol > vhigh:
-            #print("too large")
+            if debug: print("too large")
             thresh_iter = thresh_iter*1.2
             n_tries = n_tries + 1
             CCM = detect_cell_thresh(image, seedcoord, thresh_iter)
@@ -203,7 +207,7 @@ def detect_cell_iter(image, seedcoord, expandpix, vlow, vhigh):
             
         # if the volume is below target interval set threshold to previous*0.x
         if vol < vlow:
-            #print("too small")
+            if debug: print("too small")
             thresh_iter = thresh_iter*0.8
             n_tries = n_tries + 1
             CCM = detect_cell_thresh(image, seedcoord, thresh_iter)
@@ -212,22 +216,21 @@ def detect_cell_iter(image, seedcoord, expandpix, vlow, vhigh):
             
         # if the number of iterations is high and the cellmask is tiny than an absolute minimum, break and return empty mask
         if (vol < vlow and n_tries > 6):
-            #print("Bad seed: Just a specle")
-            return void_mask.get()
+            if debug: print("Bad seed: Just a specle")
+            return np.zeros_like(image)
         
         # if the number of iterations is high and the cell mask is massive, the seed is on the bg, break and return empty mask
         if (vol > vhigh*3 and n_tries > 4):
-            #print("Bad seed: bg pixel, memory used: ", getGPUmem())
-            return void_mask.get()
+            if debug: print("Bad seed: bg pixel")
+            return np.zeros_like(image)
         
         # if a reasonable volume is found return it
         if (vol < vhigh and vol >vlow):
-            #print("...Found mask in", n_tries, "iterations")
+            if debug: print("...Found mask in", n_tries, "iterations")
             return CCM
         
         # if no solution is found (bouncing right between to high and too low)
         if (n_tries > 6):
-            #print("...Bad seed: Cant find a solution")
-            return void_mask.get()      
+            if debug: print("...Bad seed: Cant find a solution")
+            return np.zeros_like(image)    
 
-        return np.array(cellimg).astype(bool)
